@@ -81,7 +81,7 @@ class TestSwagger2File:
         r2 = subprocess.run([sys.executable, str(scripts/"transform_toon.py"), str(parsed)],
                             capture_output=True, text=True, cwd=str(tmp_path))
         assert r2.returncode == 0
-        ns_dir = next((tmp_path/"storage"/"apis").iterdir())
+        ns_dir = next((tmp_path/".toon_apis"/"apis").iterdir())
         assert (ns_dir/"toon.txt").exists() and (ns_dir/"mapping.json").exists()
         toon = (ns_dir/"toon.txt").read_text()
         assert "BASE:" in toon and "/pet" in toon

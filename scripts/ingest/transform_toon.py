@@ -178,35 +178,100 @@ def generate_artifacts(spec):
                 # Resolvendo parãmetros
                 all_params = path_params + details.get("parameters", [])
                 params_toon = []
+                headers_params = []
+                sw2_has_form_data = False
+                sw2_has_body      = False
                 for p in all_params:
                     req = "!" if p.get("required") else "?"
                     schema = p.get("schema", p) # Fallback param=schema (Swagger 2.0)
                     t = extract_type(schema)
-                    params_toon.append(f"{p.get('name')}:{t}{req}")
+                    in_loc = p.get("in", "query")
+                    if in_loc == "path":
+                        continue  # path params já estão visíveis na URL
+                    elif in_loc == "header":
+                        params_toon.append(f"h:{p.get('name')}:{t}{req}")
+                        headers_params.append({"name": p.get("name"), "type": t, "required": p.get("required", False)})
+                    elif in_loc == "cookie":
+                        params_toon.append(f"c:{p.get('name')}:{t}{req}")
+                    elif in_loc == "formData":
+                        sw2_has_form_data = True
+                        params_toon.append(f"f:{p.get('name')}:{t}{req}")
+                    elif in_loc == "body":  # Swagger 2.0 body — expande igual ao requestBody OAS3
+                        sw2_has_body = True
+                        body_schema = p.get("schema", {})
+                        if body_schema:
+                            params_toon = extract_properties(spec, body_schema, prefix="body.", params=params_toon)
+                    else:  # query
+                        params_toon.append(f"q:{p.get('name')}:{t}{req}")
                     
                 # Resolvendo requestBody
+                _FORM_CTS   = {"multipart/form-data", "application/x-www-form-urlencoded"}
+                _BINARY_CTS = {"application/octet-stream", "application/pdf"}
+                _STREAM_CTS = {"text/event-stream"}
+                _TEXT_CTS   = {"text/plain", "text/html", "text/csv"}
+                _CT_ORDER   = [
+                    "application/json", "application/xml", "application/ld+json",
+                    "application/vnd.api+json", "multipart/form-data",
+                    "application/x-www-form-urlencoded", "text/plain", "text/html",
+                    "application/octet-stream", "text/event-stream",
+                ]
+                request_content_type = None
                 req_body = details.get("requestBody", {})
                 if req_body:
                     req_content = req_body.get("content", {})
-                    # Acha schema
                     s = {}
-                    priorities = ["application/json", "multipart/form-data", "application/x-www-form-urlencoded"]
-                    for pr in priorities:
-                        if pr in req_content and "schema" in req_content[pr]:
-                            s = req_content[pr]["schema"]
+                    matched_ct = None
+                    for pr in _CT_ORDER:
+                        if pr in req_content:
+                            matched_ct = pr
+                            s = req_content[pr].get("schema", {})
                             break
-                    if not s:
+                    if not matched_ct:
                         for ct, ctdet in req_content.items():
-                            if "schema" in ctdet:
-                                s = ctdet["schema"]
-                                break
-                    if s:
-                        params_toon = extract_properties(spec, s, prefix="body.", params=params_toon)
-                            
+                            matched_ct = ct
+                            s = ctdet.get("schema", {})
+                            break
+                    request_content_type = matched_ct
+                    is_binary = matched_ct in _BINARY_CTS or bool(
+                        matched_ct and matched_ct.startswith(("image/", "audio/", "video/"))
+                    )
+                    if is_binary:
+                        params_toon.append("binary")
+                    elif matched_ct in _STREAM_CTS:
+                        params_toon.append("stream")
+                    elif matched_ct in _TEXT_CTS:
+                        params_toon.append("body:s")
+                    elif s:
+                        if matched_ct in _FORM_CTS:
+                            temp = []
+                            extract_properties(spec, s, prefix="body.", params=temp)
+                            for item in temp:
+                                if item.startswith("body."):
+                                    params_toon.append("f:" + item[5:])
+                                elif item.startswith("body["):
+                                    params_toon.append("f" + item[4:])
+                                elif item.startswith("body:"):
+                                    params_toon.append("f:" + item[5:])
+                                else:
+                                    params_toon.append(item)
+                        else:
+                            params_toon = extract_properties(spec, s, prefix="body.", params=params_toon)
+
+                # Swagger 2.0: inferir request_content_type via consumes
+                if request_content_type is None and (sw2_has_form_data or sw2_has_body):
+                    op_consumes = details.get("consumes", spec.get("consumes", []))
+                    if op_consumes:
+                        request_content_type = op_consumes[0]
+                    elif sw2_has_form_data:
+                        request_content_type = "multipart/form-data"
+                    elif sw2_has_body:
+                        request_content_type = "application/json"
+
                 m_upper = method.upper()
                 c = "DEL  " if m_upper == "DELETE" else f"{m_upper: <5}"
                 responses_keys = list(details.get("responses", {}).keys())
                 responses_toon = {}
+                response_headers = {}
                 for status, r_det in details.get("responses", {}).items():
                     r_det = resolve_ref(spec, r_det)
                     r_content = r_det.get("content", {})
@@ -223,20 +288,28 @@ def generate_artifacts(spec):
                                 break
                     if rs:
                         responses_toon[status] = extract_properties(spec, rs, prefix="body.")
+                    rh = r_det.get("headers", {})
+                    if rh:
+                        response_headers[status] = [
+                            {"name": hname, "type": extract_type(resolve_ref(spec, hdet.get("schema", {})))}
+                            for hname, hdet in rh.items()
+                        ]
 
                 tags_str = f" [{', '.join(tags)}]" if tags else ""
                 toon_lines.append(f"{c} {path} -> {op_id} | {summary}{tags_str}")
                 if params_toon:
                     toon_lines.append(f"  Req: {' '.join(params_toon)}")
-                
+
                 res_strs = []
                 for st in responses_keys:
                     r_params = responses_toon.get(st, [])
-                    if r_params:
-                        res_strs.append(f"{st} ({' '.join(r_params)})")
+                    rh_strs = [f"rh:{h['name']}:{h['type']}" for h in response_headers.get(st, [])]
+                    parts = r_params + rh_strs
+                    if parts:
+                        res_strs.append(f"{st} ({' '.join(parts)})")
                     else:
                         res_strs.append(st)
-                
+
                 if res_strs:
                     toon_lines.append(f"  Res: {', '.join(res_strs)}")
                 
@@ -251,10 +324,13 @@ def generate_artifacts(spec):
                     "base_url": base_url,
                     "full_url": full_url,
                     "params_toon": params_toon,
+                    "request_content_type": request_content_type,
+                    "headers": headers_params,
                     "summary": summary,
                     "tags": tags,
                     "responses": responses_keys,
                     "responses_toon": responses_toon,
+                    "response_headers": response_headers,
                     "security": sec
                 }
                 

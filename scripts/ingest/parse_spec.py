@@ -11,7 +11,7 @@ def load_spec(source):
             resp.raise_for_status()
             content = resp.text
         else:
-            p = Path(source)
+            p = Path(source).expanduser().resolve()
             if not p.exists():
                 return {"error": f"Arquivo não encontrado: {source}"}
             content = p.read_text(encoding="utf-8")

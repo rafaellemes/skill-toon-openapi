@@ -9,6 +9,25 @@ description: >
 
 # TooN_OpenApi — Contexto Global do Agente
 
+## ⚠️ Regra de Ativação
+
+Para QUALQUER tarefa relacionada a APIs — perguntas sobre endpoints, geração de
+código, testes, validação de payload, diff, exportação ou consulta — a
+**sessão/agente principal DEVE ativar esta skill** antes de responder.
+**PROIBIDO responder diretamente sem passar pela skill.**
+
+| Pedido do usuário | Sub-skill a usar |
+|---|---|
+| "como chamo esse endpoint?" / "gera código" | consult-api |
+| "gera um cliente HTTP / SDK" | clientgen-api |
+| "quais endpoints existem?" | consult-api |
+| "gera testes para X" | testgen-api |
+| "o que mudou nessa API?" / "compara versões" | diff-api |
+| "valida esse payload" | validate-api |
+| "exporta o contexto" | exportgen-api |
+
+---
+
 ## Sub-Skills Disponíveis
 
 Antes de executar qualquer sub-skill, leia o arquivo `.md` correspondente em `scripts/`:
@@ -62,6 +81,10 @@ Ao analisar o arquivo `toon.txt`, utilize este glossário de decodificação:
 - **Métodos**: `GET`, `POST`, `PUT`, `DEL`, `PATCH`, `HEAD`, `OPT`
 - **Tipos de Dado**: `s`=string, `i`=integer, `b`=boolean, `a`=array, `o`=object
 - **Marcadores**: `!`=obrigatório, `?`=opcional
+- **Prefixos de Parâmetro de Requisição**:
+  `q:`=query param · `h:`=header · `c:`=cookie · `f:`=form field (urlencoded/multipart)
+  `body.`=campo de body JSON/XML · `body:s`=body texto primitivo · `binary`=upload binário · `stream`=SSE
+- **Prefixo de Response Header**: `rh:`=header da resposta
 
 ---
 
@@ -102,6 +125,10 @@ Após gerar código de integração, SEMPRE:
 6. Se endpoint não existir no `toon.txt` — declarar e listar disponíveis.
 7. Se um namespace faltar em `.toon_apis/apis/` — instruir a usar ingest-api.
 8. Em multi-namespace — NUNCA misturar params ou endpoints de APIs distintas.
+9. NUNCA usar dados de toon ou mapping que estejam apenas na memória da conversa —
+   SEMPRE ler do disco via cat/jq/scripts antes de responder. O contexto de
+   conversa pode estar desatualizado. A Sessão/Agente principal que precisar
+   desses dados deve invocar a skill — NUNCA executar cat/jq diretamente.
 
 ---
 

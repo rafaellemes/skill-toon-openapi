@@ -10,12 +10,22 @@ description: >
 
 # Consulta e Geração de Código
 
+> ⚠️ **OBRIGATÓRIO:** Execute os passos 1–3 ANTES de qualquer resposta.
+> PROIBIDO responder a partir de toon ou mapping que estejam na memória da
+> conversa — esses dados podem estar desatualizados. **Fonte de verdade = disco.**
+>
+> ℹ️ Os passos 1–3 são executados **INTERNAMENTE pela skill**.
+> A Sessão/Agente principal **NUNCA** executa `cat` ou `jq` diretamente —
+> deve invocar esta skill para obter essas informações.
+
 ## Fluxo (namespace único)
 
 0. Resolver contexto (ver SKILL.md — Estratégia de Contexto).
 1. `ls .toon_apis/apis/` — verificar namespace.
-2. `cat .toon_apis/apis/<ns>/toon.txt` — match semântico do operationId.
-3. `jq '.<operationId>' .toon_apis/apis/<ns>/mapping.json` — dados técnicos.
+2. **[INTERNO DA SKILL]** LER toon.txt — obrigatório antes de qualquer match de operationId:
+   `cat .toon_apis/apis/<ns>/toon.txt`
+3. **[INTERNO DA SKILL]** EXTRAIR dados técnicos do mapping.json — NUNCA de memória:
+   `jq '.<operationId>' .toon_apis/apis/<ns>/mapping.json`
 4. Gerar código idiomático com contexto resolvido.
 5. Validar payload gerado (ver SKILL.md — Validação Automática).
 6. `python .claude/skills/toon-openapi/scripts/consult/log_metrics.py <ns> <tokens> consult`
@@ -47,6 +57,10 @@ csharp=httpclient, dart=dio, elixir=httpoison
 ## Anti-alucinação
 PROIBIDO inventar campos. Nomes dos params vêm SEMPRE do mapping.json.
 Em multi-namespace: NUNCA misturar params de namespaces diferentes.
+PROIBIDO usar toon ou params da memória da conversa — mesmo que o toon já
+tenha sido lido nesta sessão, SEMPRE executar cat + jq internamente antes
+de gerar código. A Sessão/Agente principal que precisar desses dados deve
+invocar a skill — NUNCA executar cat/jq por conta própria.
 
 
 ## Linguagem Cognitiva (Cognitive Language)
